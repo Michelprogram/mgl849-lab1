@@ -35,14 +35,11 @@ int socket_connect(Socket *s);
  */
 int socket_send(Socket *s, const char *data, size_t len);
 
-/**
- * Send a string to the server
- * @param s Pointer to Socket structure
- * @param str Null-terminated string to send
- * @return Number of bytes sent, or -1 on failure
- */
-int socket_send_str(Socket *s, const char *str);
-
+int socket_send_temperature(Socket *s, float temperature);
+int socket_send_pressure(Socket *s, float pressure);
+int socket_send_humidity(Socket *s, float humidity);
+int socket_send_consigne(Socket *s, float consigne);
+int socket_send_power(Socket *s, float power);
 /**
  * Close the socket connection
  * @param s Pointer to Socket structure

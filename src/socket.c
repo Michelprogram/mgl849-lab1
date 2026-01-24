@@ -62,8 +62,34 @@ int socket_send(Socket *s, const char *data, size_t len) {
     return sent;
 }
 
-int socket_send_str(Socket *s, const char *str) {
-    return socket_send(s, str, strlen(str));
+int socket_send_temperature(Socket *s, float temperature) {
+    char buffer[100];
+    sprintf(buffer, "TP%.2f\n", temperature);
+    return socket_send(s, buffer, strlen(buffer));
+}
+
+int socket_send_pressure(Socket *s, float pressure) {
+    char buffer[100];
+    sprintf(buffer, "PR%.2f\n", pressure);
+    return socket_send(s, buffer, strlen(buffer));
+}
+
+int socket_send_humidity(Socket *s, float humidity) {
+    char buffer[100];
+    sprintf(buffer, "HU%.2f\n", humidity);
+    return socket_send(s, buffer, strlen(buffer));
+}
+
+int socket_send_consigne(Socket *s, float consigne) {
+    char buffer[100];
+    sprintf(buffer, "TD%.2f\n", consigne);
+    return socket_send(s, buffer, strlen(buffer));
+}
+
+int socket_send_power(Socket *s, float power) {
+    char buffer[100];
+    sprintf(buffer, "PW%.2f\n", power);
+    return socket_send(s, buffer, strlen(buffer));
 }
 
 void socket_close(Socket *s) {
