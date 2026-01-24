@@ -7,7 +7,7 @@ INC_DIR = include
 BUILD_DIR = build
 BIN_DIR = .
 
-SOURCES = $(SRC_DIR)/main.c $(SRC_DIR)/lps25h.c $(SRC_DIR)/socket.c
+SOURCES = $(SRC_DIR)/main.c $(SRC_DIR)/lps25h.c $(SRC_DIR)/socket.c $(SRC_DIR)/joystick.c $(SRC_DIR)/i2c.c $(SRC_DIR)/hts221.c
 OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Target executable
