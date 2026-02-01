@@ -13,6 +13,7 @@
 #define TEMP_MIN            5.0f
 #define TEMP_MAX            50.0f
 #define TEMP_DEFAULT        30.0f
+#define TEMP_STEP           1.0f
 
 // Scheduling
 #define PRIORITY_HIGH       90

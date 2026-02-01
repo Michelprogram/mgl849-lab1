@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
+#include "shared_data.h"
 #include "socket.h"
 #include "lps25h.h"
 #include "hts221.h"
@@ -9,13 +10,12 @@
 #include "tasks.h"
 #include "keyboard.h"
 #include "config.h"
-#include <signal.h> 
+#include <signal.h>
+
+#define MIN(i, j) (((i) < (j)) ? (i) : (j))
+#define MAX(i, j) (((i) > (j)) ? (i) : (j))
 
 // Define mutexes
-pthread_mutex_t sock_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t temp_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t temp_consigne_lock = PTHREAD_MUTEX_INITIALIZER;
-
 pthread_mutex_t consigne_signal_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t consigne_signal_cond;
 
@@ -47,22 +47,19 @@ int init_realtime_cond(void) {
 static void shutdown_on_error(const char *msg) {
     fprintf(stderr, "%s - initiating shutdown\n", msg);
     raise(SIGINT);
-    pthread_exit(NULL);
 }
 
 void* task_temperature(void* arg) {
-    int file = *(int*)arg;
-    while (1) {
-        pthread_mutex_lock(&temp_lock);
-        temp = lps25h_read_temperature(file);
-        pthread_mutex_unlock(&temp_lock);
+    SensorTaskArgs *args = (SensorTaskArgs*)arg;
 
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_temperature(&sock, temp) < 0) {
-            pthread_mutex_unlock(&sock_lock);
+    while (1) {
+        float temp = lps25h_read_temperature(args->i2c_fd);
+        shared_data_set_temp(args->data, temp);
+
+        if (socket_send_temperature(args->sock, temp) < 0) {
             shutdown_on_error("Failed to send temperature");
+            break;
         }
-        pthread_mutex_unlock(&sock_lock);
 
         printf("Temperature: %.2f °C\n\n", temp);
         sleep(PERIOD_SENSOR_READ);
@@ -71,15 +68,16 @@ void* task_temperature(void* arg) {
 }
 
 void* task_pressure(void* arg) {
-    int file = *(int*)arg;
+    SensorTaskArgs *args = (SensorTaskArgs*)arg;
+
     while (1) {
-        float pressure = lps25h_read_pressure(file);
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_pressure(&sock, pressure) < 0) {
-            pthread_mutex_unlock(&sock_lock);
+        float pressure = lps25h_read_pressure(args->i2c_fd);
+
+        if (socket_send_pressure(args->sock, pressure) < 0) {
             shutdown_on_error("Failed to send pressure");
+            break;
         }
-        pthread_mutex_unlock(&sock_lock);
+
         printf("Pressure: %.2f hPa\n\n", pressure);
         sleep(PERIOD_SENSOR_READ);
     }
@@ -87,15 +85,15 @@ void* task_pressure(void* arg) {
 }
 
 void* task_humidity(void* arg) {
-    int file = *(int*)arg;
+    SensorTaskArgs *args = (SensorTaskArgs*)arg;
     while (1) {
-        float humidity = hts221_read_humidity(file);
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_humidity(&sock, humidity) < 0) {
-            pthread_mutex_unlock(&sock_lock);
+        float humidity = hts221_read_humidity(args->i2c_fd);
+
+        if (socket_send_humidity(args->sock, humidity) < 0) {
             shutdown_on_error("Failed to send humidity");
+            break;
         }
-        pthread_mutex_unlock(&sock_lock);
+
         printf("Humidity: %.2f %%\n\n", humidity);
         sleep(PERIOD_SENSOR_READ);
     }
@@ -103,26 +101,22 @@ void* task_humidity(void* arg) {
 }
 
 void* task_keyboard(void* arg) {
-    int keyboard_fd = *(int*)arg;
+    KeyboardTaskArgs *args = (KeyboardTaskArgs*)arg;
     keyboard_event_t event;
 
     while (1) {
-        if (keyboard_read_event(keyboard_fd, &event) == 0) {
+        if (keyboard_read_event(args->keyboard_fd, &event) == 0) {
             if (event.value == 1) {
                 printf("[Keyboard] Key %d pressed\n", event.code);
-                
-                pthread_mutex_lock(&temp_consigne_lock);
 
+                float target_temp = shared_data_get_target_temp(args->data);
+                
                 if (event.is_plus) {
-                    temp_consigne ++;
-                    if (temp_consigne > TEMP_MAX) temp_consigne = TEMP_DEFAULT;
+                    shared_data_set_target_temp(args->data, MIN(target_temp + TEMP_STEP, TEMP_MAX));
                 } else {
-                    temp_consigne --;
-                    if (temp_consigne < TEMP_MIN) temp_consigne = TEMP_DEFAULT;
+                    shared_data_set_target_temp(args->data, MAX(target_temp - TEMP_STEP, TEMP_MIN));
                 }
 
-                pthread_mutex_unlock(&temp_consigne_lock);
-                
                 // Signal the target_temp task to send immediately
                 pthread_mutex_lock(&consigne_signal_lock);
                 pthread_cond_signal(&consigne_signal_cond);
@@ -133,12 +127,13 @@ void* task_keyboard(void* arg) {
     return NULL;
 }
 
-void* task_target_temp() {
+void* task_target_temp(void* arg) {
     int policy;
     struct sched_param param;
+    TaskArgs *args = (TaskArgs*)arg;
 
     pthread_getschedparam(pthread_self(), &policy, &param);
-    
+
     while (1) {
         struct timespec ts;
         
@@ -162,17 +157,14 @@ void* task_target_temp() {
             }
         }
 
-        pthread_mutex_lock(&temp_consigne_lock);
-        float current_consigne = temp_consigne;
-        pthread_mutex_unlock(&temp_consigne_lock);
+        float target_temp = shared_data_get_target_temp(args->data);
         
-        printf("Target temperature : %.2f°C\n\n", current_consigne);
+        printf("Target temperature : %.2f°C\n\n", target_temp);
         
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_consigne(&sock, current_consigne) < 0) {
-            fprintf(stderr, "Failed to send consigne\n");
+        if (socket_send_target_temp(args->sock, target_temp) < 0) {
+            shutdown_on_error("Failed to send target temperature");
+            break;
         }
-        pthread_mutex_unlock(&sock_lock);
 
         if (wait_result == 0) {
             struct sched_param normal_param;
@@ -183,24 +175,22 @@ void* task_target_temp() {
     return NULL;
 }
 
-void* task_power() {
+void* task_power(void* arg) {
+    TaskArgs *args = (TaskArgs*)arg;
+
     while (1) {
-        pthread_mutex_lock(&temp_consigne_lock);
-        pthread_mutex_lock(&temp_lock);
-        float power = ((temp_consigne - temp)/6.0)*100.0;
+        float temp, target_temp;
+        shared_data_get_temp_and_target_temp(args->data, &temp, &target_temp);
+
+        float power = ((target_temp - temp)/6.0)*100.0;
         if (power > 100.0) power = 100.0;
         if (power < 0.0) power = 0.0;
-        pthread_mutex_unlock(&temp_consigne_lock);
-        pthread_mutex_unlock(&temp_lock);
-
-        pthread_mutex_lock(&sock_lock);
 
         printf("Power: %.2f %%\n\n", power);
-        if (socket_send_power(&sock, power) < 0) {
-            pthread_mutex_unlock(&sock_lock);
+        if (socket_send_power(args->sock, power) < 0) {
             shutdown_on_error("Failed to send power");
+            break;
         }
-        pthread_mutex_unlock(&sock_lock);
 
         sleep(PERIOD_SENSOR_READ);
     }

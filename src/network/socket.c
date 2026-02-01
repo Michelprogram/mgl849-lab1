@@ -12,6 +12,7 @@ void socket_init(Socket *s, const char *ip, int port) {
     s->port = port;
     strncpy(s->ip, ip, sizeof(s->ip) - 1);
     s->ip[sizeof(s->ip) - 1] = '\0';
+    pthread_mutex_init(&s->lock, NULL);
 }
 
 int socket_connect(Socket *s) {
@@ -62,31 +63,56 @@ int socket_send(Socket *s, const char *data, size_t len) {
 int socket_send_temperature(Socket *s, float temperature) {
     char buffer[100];
     sprintf(buffer, "TP%.2f\n", temperature);
-    return socket_send(s, buffer, strlen(buffer));
+
+    pthread_mutex_lock(&s->lock);
+    int result = socket_send(s, buffer, strlen(buffer));
+    pthread_mutex_unlock(&s->lock);
+    
+    return result;
 }
 
 int socket_send_pressure(Socket *s, float pressure) {
     char buffer[100];
     sprintf(buffer, "PR%.2f\n", pressure);
-    return socket_send(s, buffer, strlen(buffer));
+
+    pthread_mutex_lock(&s->lock);
+    int result = socket_send(s, buffer, strlen(buffer));
+    pthread_mutex_unlock(&s->lock);
+    
+    return result;
 }
 
 int socket_send_humidity(Socket *s, float humidity) {
     char buffer[100];
     sprintf(buffer, "HU%.2f\n", humidity);
-    return socket_send(s, buffer, strlen(buffer));
+
+    pthread_mutex_lock(&s->lock);
+    int result = socket_send(s, buffer, strlen(buffer));
+    pthread_mutex_unlock(&s->lock);
+    
+    return result;
 }
 
-int socket_send_consigne(Socket *s, float consigne) {
+int socket_send_target_temp(Socket *s, float target_temp) {
     char buffer[100];
-    sprintf(buffer, "TD%.2f\n", consigne);
-    return socket_send(s, buffer, strlen(buffer));
+    sprintf(buffer, "TD%.2f\n", target_temp);
+
+    pthread_mutex_lock(&s->lock);
+    int result = socket_send(s, buffer, strlen(buffer));
+    pthread_mutex_unlock(&s->lock);
+    
+    return result;
 }
 
 int socket_send_power(Socket *s, float power) {
     char buffer[100];
     sprintf(buffer, "PW%.2f\n", power);
-    return socket_send(s, buffer, strlen(buffer));
+
+    pthread_mutex_lock(&s->lock);
+    int result = socket_send(s, buffer, strlen(buffer));
+    pthread_mutex_unlock(&s->lock);
+    
+    return result;
 }
 
 void socket_close(Socket *s) {
@@ -94,4 +120,9 @@ void socket_close(Socket *s) {
         close(s->fd);
         s->fd = -1;
     }
+}
+
+void socket_destroy(Socket *s) {
+    socket_close(s);
+    pthread_mutex_destroy(&s->lock);
 }

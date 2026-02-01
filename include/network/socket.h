@@ -2,12 +2,14 @@
 #define SOCKET_H
 
 #include <stddef.h>
+#include <pthread.h>
 
 // Socket structure
 typedef struct {
     int fd; 
     char ip[16];
     int port;
+    pthread_mutex_t lock;
 } Socket;
 
 /**
@@ -59,12 +61,12 @@ int socket_send_pressure(Socket *s, float pressure);
 int socket_send_humidity(Socket *s, float humidity);
 
 /**
- * Send consigne to the server
+ * Send target temperature to the server
  * @param s Pointer to Socket structure
- * @param consigne Consigne to send
+ * @param target_temp Target temperature to send
  * @return Number of bytes sent, or -1 on failure
  */
-int socket_send_consigne(Socket *s, float consigne);
+int socket_send_target_temp(Socket *s, float target_temp);
 
 /**
  * Send power to the server
@@ -80,4 +82,9 @@ int socket_send_power(Socket *s, float power);
  */
 void socket_close(Socket *s);
 
+/**
+ * Destroy the socket structure
+ * @param s Pointer to Socket structure
+ */
+void socket_destroy(Socket *s);
 #endif

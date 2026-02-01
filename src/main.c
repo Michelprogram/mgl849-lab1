@@ -12,9 +12,9 @@
 #include <signal.h>
 
 Socket sock;
-float temp, temp_consigne = TEMP_DEFAULT;
 int file, file2, keyboard_fd;
 pthread_t th_temperature, th_pressure, th_humidity, th_target_temp, th_power, th_keyboard;
+SharedData shared_data;
 
 void graceful_shutdown(int signum) {
     printf("\nReceived signal %d. Cancelling threads...\n", signum);
@@ -28,6 +28,9 @@ void graceful_shutdown(int signum) {
 
     printf("Closing socket...\n");
     socket_close(&sock);
+    socket_destroy(&sock);
+
+    shared_data_destroy(&shared_data);
 
     printf("Closing I2C connections...\n");
     i2c_close(file);
@@ -50,12 +53,15 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, graceful_shutdown);
 
     socket_init(&sock, server_ip, server_port);
+    shared_data_init(&shared_data);
 
     printf("Connecting to %s:%d...\n", sock.ip, sock.port);
+    
     if (socket_connect(&sock) < 0) {
         fprintf(stderr, "✗ Failed to connect\n");
         return 1;
     }
+
     printf("Connected!\n\n");
 
     file = i2c_init_lps25h();
@@ -93,12 +99,20 @@ int main(int argc, char *argv[]) {
     pthread_attr_setschedparam(&attr, &sched_param);
     pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
 
-    pthread_create(&th_temperature, &attr, task_temperature, &file);
-    pthread_create(&th_pressure, &attr, task_pressure, &file);
-    pthread_create(&th_humidity, &attr, task_humidity, &file2);
-    pthread_create(&th_power, &attr, task_power, NULL);
-    pthread_create(&th_target_temp, &attr, task_target_temp, NULL);
-    pthread_create(&th_keyboard, &attr, task_keyboard, &keyboard_fd);
+    SensorTaskArgs temp_args = { .data = &shared_data, .i2c_fd = file, .sock = &sock };
+    SensorTaskArgs pressure_args = { .data = &shared_data, .i2c_fd = file, .sock = &sock };
+    SensorTaskArgs humidity_args = { .data = &shared_data, .i2c_fd = file2, .sock = &sock };
+    KeyboardTaskArgs keyboard_args = { .data = &shared_data, .keyboard_fd = keyboard_fd };
+    
+    TaskArgs power_args = { .data = &shared_data, .sock = &sock };
+    TaskArgs target_args = { .data = &shared_data, .sock = &sock };
+
+    pthread_create(&th_temperature, &attr, task_temperature, &temp_args);
+    pthread_create(&th_pressure, &attr, task_pressure, &pressure_args);
+    pthread_create(&th_humidity, &attr, task_humidity, &humidity_args);
+    pthread_create(&th_power, &attr, task_power, &power_args);
+    pthread_create(&th_target_temp, &attr, task_target_temp, &target_args);
+    pthread_create(&th_keyboard, &attr, task_keyboard, &keyboard_args);
 
     pthread_attr_destroy(&attr);
 

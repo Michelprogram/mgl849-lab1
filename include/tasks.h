@@ -2,17 +2,27 @@
 #define TASKS_H
 
 #include <pthread.h>
-
-extern pthread_mutex_t sock_lock;
-extern pthread_mutex_t temp_lock;
-extern pthread_mutex_t temp_consigne_lock;
+#include "shared_data.h"
+#include "socket.h"  
 
 extern pthread_mutex_t consigne_signal_lock;
 extern pthread_cond_t consigne_signal_cond;
 
-extern float temp;
-extern float temp_consigne;
-extern Socket sock;
+typedef struct {
+    SharedData *data;
+    Socket *sock;
+} TaskArgs;
+
+typedef struct {
+    SharedData *data;
+    int i2c_fd;
+    Socket *sock;
+} SensorTaskArgs;
+
+typedef struct {
+    SharedData *data;
+    int keyboard_fd;
+} KeyboardTaskArgs;
 
 /**
  * Task to read temperature from LPS25H sensor
@@ -39,7 +49,7 @@ void* task_humidity(void* arg);
  * Task to read target temperature
  * @return NULL
  */
-void* task_target_temp();
+void* task_target_temp(void* arg);
 
 /**
  * Task to read keyboard events
@@ -52,7 +62,7 @@ void* task_keyboard(void* arg);
  * Task to calculate power
  * @return NULL
  */
-void* task_power();
+void* task_power(void* arg);
 
 /**
  * Initialize real-time condition
