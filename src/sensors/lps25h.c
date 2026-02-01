@@ -28,19 +28,15 @@ float lps25h_read_temperature(int file) {
     
     temp_raw = (int16_t)((temp_h << 8) | temp_l);
     
-    // Apply formula from datasheet (page 33): T(°C) = 42.5 + (TEMP_OUT / 480)
     return 42.5 + (temp_raw / 480.0);
 }
 
 float lps25h_read_pressure(int file) {
-    // La pression est sur 3 registres (24 bits)
     uint8_t xl = i2c_smbus_read_byte_data(file, PRESS_OUT_XL);
     uint8_t l = i2c_smbus_read_byte_data(file, PRESS_OUT_L);
     uint8_t h = i2c_smbus_read_byte_data(file, PRESS_OUT_H);
     
-    // Reconstruction de la valeur brute
     int32_t raw = (int32_t)((h << 16) | (l << 8) | xl);
     
-    // Formule de la datasheet : P = raw / 4096
     return (float)raw / 4096.0;
 }

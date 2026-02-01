@@ -58,13 +58,11 @@ int i2c_init_hts221(void) {
     int file = open("/dev/i2c-1", O_RDWR);
     if (file < 0) return -1;
 
-    // Fixer l'adresse pour le reste de la session
     if (ioctl(file, I2C_SLAVE, HTS221_ADDR) < 0) {
         close(file);
         return -1;
     }
 
-    // Config : Power ON (0x80) + 1Hz (0x01) = 0x81
     i2c_smbus_write_byte_data(file, CTRL_REG1_HTS221, 0x81);
     
     return file;

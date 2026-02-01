@@ -1,14 +1,11 @@
 #include <stdint.h>
 
-// LPS25H I2C Addresses
 #define LPS25H_ADDR 0x5C
 
-// Register addresses (from datasheet page 20)
-#define WHO_AM_I    0x0F  // Should return 0xBD
-#define CTRL_REG1   0x20  // Control register
-#define STATUS_REG  0x27  // Status register
+#define WHO_AM_I    0x0F
+#define CTRL_REG1   0x20
+#define STATUS_REG  0x27
 
-// Expected device ID
 #define LPS25H_ID   0xBD
 
 #define CTRL_REG1_HTS221   0x20
@@ -21,6 +18,14 @@
  */
 int i2c_init_lps25h(void);
 
+/**
+ * Initialize I2C bus for HTS221 sensor
+ * @return File descriptor for I2C device, or -1 on failure
+ */
 int i2c_init_hts221(void);
 
+/**
+ * Close I2C bus
+ * @param file File descriptor for I2C device
+ */
 void i2c_close(int file);

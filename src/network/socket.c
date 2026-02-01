@@ -10,7 +10,6 @@
 void socket_init(Socket *s, const char *ip, int port) {
     s->fd = -1;
     s->port = port;
-    s->connected = 0;
     strncpy(s->ip, ip, sizeof(s->ip) - 1);
     s->ip[sizeof(s->ip) - 1] = '\0';
 }
@@ -42,12 +41,11 @@ int socket_connect(Socket *s) {
         return -1;
     }
     
-    s->connected = 1;
     return 0;
 }
 
 int socket_send(Socket *s, const char *data, size_t len) {
-    if (!s->connected || s->fd < 0) {
+    if (s->fd < 0) {
         fprintf(stderr, "Socket not connected\n");
         return -1;
     }
@@ -55,7 +53,6 @@ int socket_send(Socket *s, const char *data, size_t len) {
     ssize_t sent = send(s->fd, data, len, 0);
     if (sent < 0) {
         perror("Send failed");
-        s->connected = 0;
         return -1;
     }
     
@@ -97,9 +94,4 @@ void socket_close(Socket *s) {
         close(s->fd);
         s->fd = -1;
     }
-    s->connected = 0;
-}
-
-int socket_is_connected(Socket *s) {
-    return s->connected;
 }

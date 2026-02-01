@@ -8,7 +8,6 @@ typedef struct {
     int fd; 
     char ip[16];
     int port;
-    int connected;
 } Socket;
 
 /**
@@ -35,22 +34,50 @@ int socket_connect(Socket *s);
  */
 int socket_send(Socket *s, const char *data, size_t len);
 
+/**
+ * Send temperature to the server
+ * @param s Pointer to Socket structure
+ * @param temperature Temperature to send
+ * @return Number of bytes sent, or -1 on failure
+ */
 int socket_send_temperature(Socket *s, float temperature);
+
+/**
+ * Send pressure to the server
+ * @param s Pointer to Socket structure
+ * @param pressure Pressure to send
+ * @return Number of bytes sent, or -1 on failure
+ */
 int socket_send_pressure(Socket *s, float pressure);
+
+/**
+ * Send humidity to the server
+ * @param s Pointer to Socket structure
+ * @param humidity Humidity to send
+ * @return Number of bytes sent, or -1 on failure
+ */
 int socket_send_humidity(Socket *s, float humidity);
+
+/**
+ * Send consigne to the server
+ * @param s Pointer to Socket structure
+ * @param consigne Consigne to send
+ * @return Number of bytes sent, or -1 on failure
+ */
 int socket_send_consigne(Socket *s, float consigne);
+
+/**
+ * Send power to the server
+ * @param s Pointer to Socket structure
+ * @param power Power to send
+ * @return Number of bytes sent, or -1 on failure
+ */
 int socket_send_power(Socket *s, float power);
+
 /**
  * Close the socket connection
  * @param s Pointer to Socket structure
  */
 void socket_close(Socket *s);
 
-/**
- * Check if socket is connected
- * @param s Pointer to Socket structure
- * @return 1 if connected, 0 if disconnected
- */
-int socket_is_connected(Socket *s);
-
-#endif // SOCKET_H
+#endif

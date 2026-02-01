@@ -6,119 +6,49 @@
 #include "lps25h.h"
 #include "i2c.h"
 #include "hts221.h"
-#include "joystick.h"
+#include "keyboard.h"
+#include "config.h"
+#include "tasks.h"
+#include <signal.h>
 
 Socket sock;
-float temp;
-float temp_consigne = 30.0;
+float temp, temp_consigne = TEMP_DEFAULT;
+int file, file2, keyboard_fd;
+pthread_t th_temperature, th_pressure, th_humidity, th_target_temp, th_power, th_keyboard;
 
-pthread_mutex_t sock_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t temp_lock = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t temp_consigne_lock = PTHREAD_MUTEX_INITIALIZER;
+void graceful_shutdown(int signum) {
+    printf("\nReceived signal %d. Cancelling threads...\n", signum);
 
+    pthread_cancel(th_temperature);
+    pthread_cancel(th_pressure);
+    pthread_cancel(th_humidity);
+    pthread_cancel(th_target_temp);
+    pthread_cancel(th_power);
+    pthread_cancel(th_keyboard);
 
-void* task_read_temperature(void* arg) {
-    int file = *(int*)arg;
-    while (1) {
-        pthread_mutex_lock(&temp_lock);
-        temp = lps25h_read_temperature(file);
-        pthread_mutex_unlock(&temp_lock);
+    printf("Closing socket...\n");
+    socket_close(&sock);
 
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_temperature(&sock, temp) < 0) {
-            fprintf(stderr, "Failed to send temperature\n");
-        }
-        pthread_mutex_unlock(&sock_lock);
-        
-        printf("Temperature: %.2f °C\n", temp);
-        sleep(2);
-    }
-    return NULL;
-}
+    printf("Closing I2C connections...\n");
+    i2c_close(file);
+    i2c_close(file2);
 
-void* task_read_pressure(void* arg) {
-    int file = *(int*)arg;
-    while (1) {
-        float pressure = lps25h_read_pressure(file);
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_pressure(&sock, pressure) < 0) {
-            fprintf(stderr, "Failed to send pressure\n");
-        }
-        pthread_mutex_unlock(&sock_lock);
-        printf("Pressure: %.2f hPa\n", pressure);
-        sleep(2);
-    }
-    return NULL;
-}
+    printf("Closing keyboard...\n");
+    keyboard_close(keyboard_fd);
 
-void* task_read_humidity(void* arg) {
-    int file = *(int*)arg;
-    while (1) {
-        float humidity = hts221_read_humidity(file);
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_humidity(&sock, humidity) < 0) {
-            fprintf(stderr, "Failed to send humidity\n");
-        }
-        pthread_mutex_unlock(&sock_lock);
-        printf("Humidity: %.2f %%\n", humidity);
-        sleep(2);
-    }
-    return NULL;
-}
-
-void* task_setpoint_logic(void* arg) {
-    while (1) {
-        sleep(5); 
-        pthread_mutex_lock(&temp_consigne_lock);
-        temp_consigne += 2.0;
-        pthread_mutex_unlock(&temp_consigne_lock);
-        
-        if (temp_consigne > 40.0) temp_consigne = 5.0; 
-        
-        printf("[T1] Nouvelle consigne : %.2f°C\n", temp_consigne);
-        pthread_mutex_lock(&sock_lock);
-        if (socket_send_consigne(&sock, temp_consigne) < 0) {
-            fprintf(stderr, "Failed to send consigne\n");
-        }
-        pthread_mutex_unlock(&sock_lock);
-    }
-    return NULL;
-}
-
-void* task_power(void* arg) {
-    while (1) {
-        pthread_mutex_lock(&temp_consigne_lock);
-        pthread_mutex_lock(&temp_lock);
-        float power = ((temp_consigne - temp)/6.0)*100.0;
-        if (power > 100.0) power = 100.0;
-        if (power < 0.0) power = 0.0;
-        pthread_mutex_unlock(&temp_consigne_lock);
-        pthread_mutex_unlock(&temp_lock);
-
-        pthread_mutex_lock(&sock_lock);
-
-        printf("Power: %.2f %%\n", power);
-        if (socket_send_power(&sock, power) < 0) {
-            fprintf(stderr, "Failed to send power\n");
-        }
-        pthread_mutex_unlock(&sock_lock);
-
-        sleep(2);
-    }
-    return NULL;
+    printf("Cleanup complete. Exiting...\n");
+    exit(0);
 }
 
 int main(int argc, char *argv[]) {
+    pthread_attr_t attr;
+    struct sched_param sched_param;
 
-    pthread_t th_read_temperature;
-    pthread_t th_read_pressure;
-    pthread_t th_read_humidity;
-    pthread_t th_setpoint_logic;
-    pthread_t th_power;
+    const char *server_ip = (argc > 1) ? argv[1] : DEFAULT_SERVER_IP;
+    int server_port = (argc > 2) ? atoi(argv[2]) : DEFAULT_SERVER_PORT;
 
-    const char *server_ip = (argc > 1) ? argv[1] : "127.0.0.1";
-    int server_port = (argc > 2) ? atoi(argv[2]) : 1234;
-    
+    signal(SIGINT, graceful_shutdown);
+
     socket_init(&sock, server_ip, server_port);
 
     printf("Connecting to %s:%d...\n", sock.ip, sock.port);
@@ -128,8 +58,8 @@ int main(int argc, char *argv[]) {
     }
     printf("Connected!\n\n");
 
-    int file = i2c_init_lps25h();
-    int file2 = i2c_init_hts221();
+    file = i2c_init_lps25h();
+    file2 = i2c_init_hts221();
 
     if (file < 0) {
         fprintf(stderr, "Failed to initialize I2C bus\n");
@@ -142,22 +72,44 @@ int main(int argc, char *argv[]) {
 
     printf("I2C buses initialized\n");
 
-    pthread_create(&th_read_temperature, NULL, task_read_temperature, &file);
-    pthread_create(&th_read_pressure, NULL, task_read_pressure, &file);
-    pthread_create(&th_read_humidity, NULL, task_read_humidity, &file2);
-    pthread_create(&th_setpoint_logic, NULL, task_setpoint_logic, NULL);
-    pthread_create(&th_power, NULL, task_power, NULL);
+    keyboard_fd = keyboard_init();
 
-    pthread_join(th_read_temperature, NULL);
-    pthread_join(th_read_pressure, NULL);
-    pthread_join(th_read_humidity, NULL);
-    pthread_join(th_setpoint_logic, NULL);
+    if (keyboard_fd < 0) {
+        fprintf(stderr, "Failed to initialize keyboard\n");
+        return 1;
+    }
+
+    printf("Keyboard initialized\n");
+
+    if (init_realtime_cond() < 0) {
+        fprintf(stderr, "Failed to initialize real-time condition\n");
+        return 1;
+    }
+    printf("Real-time condition variable initialized (CLOCK_MONOTONIC)\n");
+
+    pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+    sched_param.sched_priority = PRIORITY_NORMAL;
+    pthread_attr_setschedparam(&attr, &sched_param);
+    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+
+    pthread_create(&th_temperature, &attr, task_temperature, &file);
+    pthread_create(&th_pressure, &attr, task_pressure, &file);
+    pthread_create(&th_humidity, &attr, task_humidity, &file2);
+    pthread_create(&th_power, &attr, task_power, NULL);
+    pthread_create(&th_target_temp, &attr, task_target_temp, NULL);
+    pthread_create(&th_keyboard, &attr, task_keyboard, &keyboard_fd);
+
+    pthread_attr_destroy(&attr);
+
+    pthread_join(th_temperature, NULL);
+    pthread_join(th_pressure, NULL);
+    pthread_join(th_humidity, NULL);
+    pthread_join(th_target_temp, NULL);
     pthread_join(th_power, NULL);
+    pthread_join(th_keyboard, NULL);
 
-    socket_close(&sock);
-    i2c_close(file);
-    i2c_close(file2);
+    graceful_shutdown(0);
 
     return 0;
 }
-
