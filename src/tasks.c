@@ -119,7 +119,7 @@ void* task_keyboard(void* arg) {
 
                 // Signal the target_temp task to send immediately
                 pthread_mutex_lock(&consigne_signal_lock);
-                pthread_cond_signal(&consigne_signal_cond);
+                pthread_cond_broadcast(&consigne_signal_cond); 
                 pthread_mutex_unlock(&consigne_signal_lock);
             }
         }
@@ -176,9 +176,35 @@ void* task_target_temp(void* arg) {
 }
 
 void* task_power(void* arg) {
+    int policy;
+    struct sched_param param;
     TaskArgs *args = (TaskArgs*)arg;
 
+    pthread_getschedparam(pthread_self(), &policy, &param);
+
     while (1) {
+        
+        struct timespec ts;
+        
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ts.tv_sec += PERIOD_TARGET_TEMP;
+        
+        pthread_mutex_lock(&consigne_signal_lock);
+        int wait_result = pthread_cond_timedwait(&consigne_signal_cond, 
+                                                  &consigne_signal_lock, &ts);
+        pthread_mutex_unlock(&consigne_signal_lock);
+        
+        if (wait_result == 0) {
+            printf("Switching to SCHED_FIFO\n");
+            
+            struct sched_param rt_param;
+            rt_param.sched_priority = PRIORITY_HIGH;
+            
+            if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &rt_param) != 0) {
+                perror("Failed to set SCHED_FIFO");
+            }
+        }
+        
         float temp, target_temp;
         shared_data_get_temp_and_target_temp(args->data, &temp, &target_temp);
 
@@ -191,8 +217,12 @@ void* task_power(void* arg) {
             shutdown_on_error("Failed to send power");
             break;
         }
-
-        sleep(PERIOD_SENSOR_READ);
+        
+        if (wait_result == 0) {
+            struct sched_param normal_param;
+            normal_param.sched_priority = PRIORITY_NORMAL;
+            pthread_setschedparam(pthread_self(), SCHED_OTHER, &normal_param);
+        }
     }
     return NULL;
 }
